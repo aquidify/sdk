@@ -74,6 +74,7 @@ Every error has the same shape; branch on `error.code`, not on the message.
 | 413 | `body_too_large` | no (max 16 KB; input max 2000 characters) |
 | 422 | `invalid_request`, `idempotency_mismatch` | no |
 | 429 | `rate_limited` | yes, after `Retry-After` seconds |
+| 500 | `internal` | maybe, once; report it with the `request_id` if it repeats |
 | 502 | `interpretation_failed` | maybe, the model gave no valid answer |
 | 503 | `model_unavailable` | yes, after `Retry-After` seconds |
 | 504 | `timeout` | yes |
