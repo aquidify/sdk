@@ -5,7 +5,11 @@ info:
   summary: Turn what people type into validated, structured intent.
   description: |
     Send free text and a domain; get back structured intent that your software
-    can act on. Every extracted item quotes the exact span of input it came from
+    can act on. Use a built-in domain (`hiring.candidate`), or register your own
+    task (`PUT /v1/tasks/{id}`) with a JSON Schema of the fields you need, for
+    any industry: support tickets, orders, bookings, listings, lead forms.
+
+    Every extracted item quotes the exact span of input it came from
     (`raw_text`), uncertainty is kept rather than guessed away, and "unknown" is
     never confused with "any".
 
@@ -59,6 +63,71 @@ paths:
         "503": { $ref: "#/components/responses/Error" }
         "504": { $ref: "#/components/responses/Error" }
 
+  /v1/tasks/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: "`name@major.minor.patch`, e.g. `support.ticket@1.0.0`. Tasks are private to the API key that registered them."
+        schema: { type: string, pattern: '^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*@\d+\.\d+\.\d+$' }
+    put:
+      operationId: putTask
+      summary: Register a task version
+      description: >
+        A version is immutable. Sending the same definition again returns 200;
+        a different definition for an existing version returns 409 `task_exists`:
+        register a new version instead. Then interpret with `domain` set to the id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TaskDefinition" }
+            example:
+              instructions: Classify customer support emails for routing.
+              schema:
+                type: object
+                properties:
+                  category: { enum: [billing, bug, refund, other] }
+                  order_id: { type: string, description: "Order number, digits only" }
+                  urgency: { enum: [low, normal, high] }
+              examples:
+                - input: "I was charged twice for order #1200"
+                  output: { category: billing, order_id: "1200" }
+      responses:
+        "201": { description: Registered, content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } } }
+        "200": { description: Already registered with this definition, content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    get:
+      operationId: getTask
+      summary: Read a registered task
+      responses:
+        "200": { description: The task, content: { application/json: { schema: { $ref: "#/components/schemas/Task" } } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /v1/tasks:
+    get:
+      operationId: listTasks
+      summary: List the task ids registered with this API key
+      responses:
+        "200":
+          description: Task ids
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tasks]
+                properties: { tasks: { type: array, items: { type: string } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
   /healthz:
     get:
       operationId: health
@@ -93,8 +162,11 @@ components:
       properties:
         domain:
           type: string
-          description: Domain to interpret in. Available now `hiring.candidate`.
-          examples: [hiring.candidate]
+          description: >
+            Built-in domain (`hiring.candidate`) or one of your registered tasks
+            (`name@version`). A task pins its version in the id, so omit
+            parser_version and schema_version for tasks.
+          examples: [hiring.candidate, support.ticket@1.0.0]
         input:
           type: string
           maxLength: 2000
@@ -122,13 +194,58 @@ components:
           description: >
             Domain output. For `hiring.candidate` 1.0.0 it follows
             `schemas/hiring.candidate-1.0.0.json` without its top-level
-            `clarification` (returned separately below).
+            `clarification` (returned separately below). For a task it is
+            `{fields, evidence, uncertainties, contradictions}`: `fields`
+            follows your schema; every field with a value has at least one
+            `evidence` item quoting the input. The exact schema is the task's
+            `output_schema`.
         clarification:
           description: Present only when the input cannot be interpreted without asking.
           oneOf:
             - type: "null"
             - $ref: "#/components/schemas/Clarification"
         meta: { $ref: "#/components/schemas/Meta" }
+
+    TaskDefinition:
+      type: object
+      additionalProperties: false
+      required: [instructions, schema]
+      properties:
+        description: { type: string, maxLength: 300 }
+        instructions:
+          type: string
+          maxLength: 4000
+          description: What to extract and how, in plain words.
+        schema:
+          type: object
+          description: >
+            JSON Schema of the fields, top level `{"type": "object", "properties": {...}}`.
+            Supported keywords: type, description, enum, properties, required, items,
+            anyOf (nesting up to 5 levels, 200 properties). Property names are
+            lowercase snake_case. A property not listed in `required` may come back
+            null. Mark a field required only when every input will state it: a
+            required field the input does not support fails the interpretation.
+        examples:
+          type: array
+          maxItems: 5
+          items:
+            type: object
+            additionalProperties: false
+            required: [input, output]
+            properties:
+              input: { type: string, maxLength: 2000 }
+              output: { type: object, description: The fields for this input; must match `schema`. }
+
+    Task:
+      allOf:
+        - $ref: "#/components/schemas/TaskDefinition"
+        - type: object
+          required: [id, created_at, parser_version, output_schema]
+          properties:
+            id: { type: string, examples: [support.ticket@1.0.0] }
+            created_at: { type: string, format: date-time }
+            parser_version: { type: string, description: "Engine task parser plus a hash of this definition, e.g. `1.0.0+e958a2aa56ff`." }
+            output_schema: { type: object, description: The schema interpretations of this task follow. }
 
     Clarification:
       type: object
@@ -175,6 +292,10 @@ components:
                 - body_too_large
                 - invalid_request
                 - idempotency_mismatch
+                - invalid_task
+                - task_exists
+                - task_limit
+                - not_found
                 - model_unavailable
                 - interpretation_failed
                 - timeout

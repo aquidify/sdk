@@ -37,7 +37,7 @@ Until the package is on Packagist, add the repository to your `composer.json`:
 
 ```bash
 composer config repositories.aquidify vcs https://github.com/aquidify/sdk
-composer require aquidify/sdk:^0.1
+composer require aquidify/sdk:^0.3
 ```
 
 ```php
@@ -47,6 +47,22 @@ $r  = $aq->interpret('hiring.candidate', 'Iščem delo v skladišču v Ljubljani
 $r['interpretation']['intents'][0]['roles'][0]['value'];   // "warehouse"
 $r['clarification'];                                       // null
 ```
+
+Your own task, for any industry (see [curl/README.md](curl/README.md#your-own-task-any-industry)):
+
+```php
+$aq->putTask('support.ticket@1.0.0', [
+    'instructions' => 'Classify customer support emails for routing.',
+    'schema' => ['type' => 'object', 'properties' => [
+        'category' => ['enum' => ['billing', 'bug', 'refund', 'other']],
+        'order_id' => ['type' => 'string', 'description' => 'Order number, digits only'],
+    ]],
+]);
+$fields = $aq->interpret('support.ticket@1.0.0', $emailBody, 'en')['interpretation']['fields'];
+```
+
+Every SDK can interpret with a task id as the domain; registering tasks is in the
+PHP SDK and plain HTTP for now.
 
 ## Laravel
 

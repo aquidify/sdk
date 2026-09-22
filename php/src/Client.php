@@ -13,7 +13,7 @@ namespace Aquidify;
  */
 final class Client implements Interpreter
 {
-    public const VERSION = '0.2.0';
+    public const VERSION = '0.3.0';
 
     private readonly string $apiKey;
 
@@ -50,21 +50,67 @@ final class Client implements Interpreter
             $headers[] = 'Idempotency-Key: '.$options['idempotency_key'];
         }
 
-        return $this->post('/v1/interpret', $body, $headers);
+        return $this->request('POST', '/v1/interpret', $body, $headers);
     }
 
     /**
-     * @param  array<string, mixed>  $body
+     * Register a task version: what to extract from free text, for your own use case.
+     * Sending the same definition again is a no-op; a changed definition needs a new version.
+     *
+     *     $aq->putTask('support.ticket@1.0.0', [
+     *         'instructions' => 'Classify customer support emails.',
+     *         'schema' => ['type' => 'object', 'properties' => [
+     *             'category' => ['enum' => ['billing', 'bug', 'refund']],
+     *             'order_id' => ['type' => 'string'],
+     *         ]],
+     *         'examples' => [['input' => 'Charged twice for #1200', 'output' => ['category' => 'billing', 'order_id' => '1200']]],
+     *     ]);
+     *     $aq->interpret('support.ticket@1.0.0', $emailBody, 'en')['interpretation']['fields'];
+     *
+     * @param  array{instructions: string, schema: array<string, mixed>, description?: string, examples?: list<array{input: string, output: array<string, mixed>}>}  $definition
+     * @return array<string, mixed> the task, its parser_version and output_schema
+     *
+     * @throws AquidifyException invalid_task, task_exists, task_limit, ...
+     */
+    public function putTask(string $id, array $definition): array
+    {
+        return $this->request('PUT', '/v1/tasks/'.rawurlencode($id), $definition, []);
+    }
+
+    /**
+     * @return array<string, mixed>
+     *
+     * @throws AquidifyException not_found when this API key has no such task
+     */
+    public function getTask(string $id): array
+    {
+        return $this->request('GET', '/v1/tasks/'.rawurlencode($id), null, []);
+    }
+
+    /**
+     * @return list<string> task ids registered with this API key
+     *
+     * @throws AquidifyException
+     */
+    public function listTasks(): array
+    {
+        return $this->request('GET', '/v1/tasks', null, [])['tasks'];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $body
      * @param  list<string>  $headers
      * @return array<string, mixed>
      */
-    private function post(string $path, array $body, array $headers): array
+    private function request(string $method, string $path, ?array $body, array $headers): array
     {
         $ch = curl_init(rtrim($this->baseUrl, '/').$path);
         $responseHeaders = [];
+        if ($body !== null) {
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($body, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
+        }
         curl_setopt_array($ch, [
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => json_encode($body, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
+            CURLOPT_CUSTOMREQUEST => $method,
             CURLOPT_HTTPHEADER => [
                 'Authorization: Bearer '.$this->apiKey,
                 'Content-Type: application/json',
