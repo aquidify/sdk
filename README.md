@@ -1,4 +1,4 @@
-<p align="center"><a href="https://aquidify.com"><img src=".github/logo.png" alt="Aquidify" width="280"></a></p>
+<p align="center"><a href="https://aquidify.com"><img src=".github/logo.svg" alt="Aquidify" width="96"></a></p>
 
 # Aquidify SDKs
 
