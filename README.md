@@ -12,15 +12,15 @@ Every extracted item quotes the exact span it came from (`raw_text`),
 uncertainty is kept instead of guessed away, and "unknown" is never confused
 with "any". **Aquidify interprets; your application decides.**
 
-| Language | Folder | Install |
-|---|---|---|
-| PHP 8.2+ | [`php/`](php) | `composer require aquidify/sdk` |
-| TypeScript / JavaScript | [`js/`](js) | `npm install @aquidify/sdk` |
-| Go | [`go/`](go) | `go get github.com/aquidify/sdk/go` |
-| Python 3.9+ | [`python/`](python) | `pip install aquidify` |
-| Java 17+ | [`java/`](java) | Maven `com.aquidify:aquidify-sdk` |
-| Rust | [`rust/`](rust) | `cargo add aquidify` |
-| curl / any language | [`curl/`](curl) | — |
+| Language | Folder | Install today (from GitHub) | Registry |
+|---|---|---|---|
+| PHP 8.2+ | [`php/`](php) | see [PHP](#php) below | Packagist `aquidify/sdk`, coming soon |
+| TypeScript / JavaScript | [`js/`](js) | build from source: `cd js && npm install && npm run build` | npm `@aquidify/sdk`, coming soon |
+| Go | [`go/`](go) | `go get github.com/aquidify/sdk/go@v0.1.0` | ✓ published |
+| Python 3.9+ | [`python/`](python) | `pip install "git+https://github.com/aquidify/sdk@v0.1.0#subdirectory=python"` | PyPI `aquidify`, coming soon |
+| Java 17+ | [`java/`](java) | `cd java && mvn install`, then depend on `com.aquidify:aquidify-sdk:0.1.0` | Maven Central, coming soon |
+| Rust | [`rust/`](rust) | `aquidify = { git = "https://github.com/aquidify/sdk", tag = "v0.1.0" }` | crates.io `aquidify`, coming soon |
+| curl / any language | [`curl/`](curl) | nothing to install | — |
 
 Not listed? Generate a client from [`openapi.yaml`](openapi.yaml), the source
 of truth for every SDK here. Output shapes per domain are JSON Schemas in
@@ -30,6 +30,13 @@ All clients read `AQUIDIFY_API_KEY` from the environment when no key is passed.
 **Keep keys server-side**: never ship one to a browser or mobile app.
 
 ## PHP
+
+Until the package is on Packagist, add the repository to your `composer.json`:
+
+```bash
+composer config repositories.aquidify vcs https://github.com/aquidify/sdk
+composer require aquidify/sdk:^0.1
+```
 
 ```php
 $aq = new Aquidify\Client();   // AQUIDIFY_API_KEY
