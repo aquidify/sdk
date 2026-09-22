@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "hiring-candidate-intent@1.0.0",
+  "title": "hiring-candidate-intent",
+  "description": "What a job seeker said they want. Only what is explicit or unambiguous in the input.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["intents", "uncertainties", "contradictions", "clarification"],
+  "properties": {
+    "intents": {
+      "type": "array",
+      "description": "Usually one. More than one only when the input describes separate job searches (e.g. a main job and a side gig).",
+      "items": { "$ref": "#/$defs/intent" }
+    },
+    "uncertainties": { "type": "array", "items": { "$ref": "#/$defs/uncertainty" } },
+    "contradictions": { "type": "array", "items": { "$ref": "#/$defs/contradiction" } },
+    "clarification": {
+      "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/clarification" }],
+      "description": "Only when interpretation is blocked. null when a useful partial result exists."
+    }
+  },
+  "$defs": {
+    "polarity": {
+      "type": "string",
+      "enum": ["include", "exclude"],
+      "description": "include = wants it; exclude = does not want it (\"no nights\")."
+    },
+    "strength": {
+      "type": "string",
+      "enum": ["required", "preferred", "acceptable", "conditional"],
+      "description": "required = must/only/never; preferred = would like; acceptable = fine with it; conditional = only under the stated condition."
+    },
+    "condition": {
+      "anyOf": [{ "type": "null" }, { "type": "string" }],
+      "description": "The condition, when strength is conditional (\"if the pay is higher\"). Otherwise null."
+    },
+    "raw_text": {
+      "type": "string",
+      "description": "Exact span copied from the input that supports this item."
+    },
+    "nullable_string": { "anyOf": [{ "type": "null" }, { "type": "string" }] },
+    "nullable_number": { "anyOf": [{ "type": "null" }, { "type": "number" }] },
+
+    "intent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "roles", "locations", "work_modes", "engagement_types", "schedules",
+        "salary", "availability", "capabilities", "interests", "constraints", "explicit_any"
+      ],
+      "properties": {
+        "roles": { "type": "array", "items": { "$ref": "#/$defs/role" } },
+        "locations": { "type": "array", "items": { "$ref": "#/$defs/location" } },
+        "work_modes": { "type": "array", "items": { "$ref": "#/$defs/work_mode" } },
+        "engagement_types": { "type": "array", "items": { "$ref": "#/$defs/engagement_type" } },
+        "schedules": { "type": "array", "items": { "$ref": "#/$defs/schedule" } },
+        "salary": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/salary" }] },
+        "availability": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/availability" }] },
+        "capabilities": { "type": "array", "items": { "$ref": "#/$defs/capability" } },
+        "interests": { "type": "array", "items": { "$ref": "#/$defs/interest" } },
+        "constraints": { "type": "array", "items": { "$ref": "#/$defs/constraint" } },
+        "explicit_any": {
+          "type": "array",
+          "description": "Fields the user explicitly said anything is fine for (\"any job\"). An empty field without this means unknown, not any.",
+          "items": { "type": "string", "enum": ["roles", "locations", "work_modes", "engagement_types", "schedules"] }
+        }
+      }
+    },
+
+    "role": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "polarity", "strength", "condition", "raw_text"],
+      "properties": {
+        "value": { "type": "string", "description": "Occupation or field in English, lowercase, as general as the input (\"warehouse\", \"senior php developer\")." },
+        "polarity": { "$ref": "#/$defs/polarity" },
+        "strength": { "$ref": "#/$defs/strength" },
+        "condition": { "$ref": "#/$defs/condition" },
+        "raw_text": { "$ref": "#/$defs/raw_text" }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "radius_km", "polarity", "strength", "condition", "raw_text"],
+      "properties": {
+        "value": { "anyOf": [{ "type": "null" }, { "type": "string" }], "description": "Place name in its base (nominative) form, e.g. \"Ljubljana\". null when no place is named (only a distance, or just \"local\" / \"near me\")." },
+        "radius_km": { "anyOf": [{ "type": "null" }, { "type": "number" }], "description": "Only when a distance is stated." },
+        "polarity": { "$ref": "#/$defs/polarity" },
+        "strength": { "$ref": "#/$defs/strength" },
+        "condition": { "$ref": "#/$defs/condition" },
+        "raw_text": { "$ref": "#/$defs/raw_text" }
+      }
+    },
+    "work_mode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "polarity", "strength", "condition", "raw_text"],
+      "properties": {
+        "value": { "type": "string", "enum": ["onsite", "hybrid", "remote"] },
+        "polarity": { "$ref": "#/$defs/polarity" },
+        "strength": { "$ref": "#/$defs/strength" },
+        "condition": { "$ref": "#/$defs/condition" },
+        "raw_text": { "$ref": "#/$defs/raw_text" }
+      }
+    },
+    "engagement_type": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "polarity", "strength", "condition", "raw_text"],
+      "properties": {
+        "value": { "type": "string", "enum": ["full_time", "part_time", "contract", "freelance", "temporary", "seasonal", "internship", "student_work", "side_job"] },
+        "polarity": { "$ref": "#/$defs/polarity" },
+        "strength": { "$ref": "#/$defs/strength" },
+        "condition": { "$ref": "#/$defs/condition" },
+        "raw_text": { "$ref": "#/$defs/raw_text" }
+      }
+    },
+    "schedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "polarity", "strength", "condition", "raw_text"],
+      "properties": {
+        "value": {
+          "type": "string",
+          "enum": ["morning", "afternoon", "evening", "night", "weekday", "weekend", "shift_work", "flexible_hours"],
+          "description": "shift_work = rotating shifts in general. \"no shifts\" is shift_work with polarity exclude."
+        },
+        "polarity": { "$ref": "#/$defs/polarity" },
+        "strength": { "$ref": "#/$defs/strength" },
+        "condition": { "$ref": "#/$defs/condition" },
+        "raw_text": { "$ref": "#/$defs/raw_text" }
+      }
+    },
+    "salary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min", "max", "currency", "period", "basis", "strength", "condition", "raw_text"],
+      "properties": {
+        "min": { "anyOf": [{ "type": "null" }, { "type": "number" }], "description": "Expanded number: \"4k\" = 4000." },
+        "max": { "$ref": "#/$defs/nullable_number" },
+        "currency": { "anyOf": [{ "type": "null" }, { "type": "string" }], "description": "ISO 4217 code, only if stated or given by a symbol." },
+        "period": { "anyOf": [{ "type": "null" }, { "type": "string", "enum": ["hour", "day", "month", "year"] }] },
+        "basis": { "anyOf": [{ "type": "null" }, { "type": "string", "enum": ["net", "gross"] }] },
+        "strength": { "$ref": "#/$defs/strength" },
+        "condition": { "$ref": "#/$defs/condition" },
+        "raw_text": { "$ref": "#/$defs/raw_text" }
+      }
+    },
+    "availability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timing", "detail", "raw_text"],
+      "properties": {
+        "timing": { "type": "string", "enum": ["immediately", "specific", "flexible"], "description": "specific = a stated time (\"tomorrow\", \"from March\"); do not resolve it to a date." },
+        "detail": { "anyOf": [{ "type": "null" }, { "type": "string" }], "description": "The stated time in English, e.g. \"tomorrow\"." },
+        "raw_text": { "$ref": "#/$defs/raw_text" }
+      }
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "status", "willing_to_acquire", "willingness_raw_text", "raw_text"],
+      "properties": {
+        "value": { "type": "string", "description": "Skill, licence or qualification in English, lowercase. One item per skill." },
+        "status": { "type": "string", "enum": ["has", "lacks"], "description": "What the user claims. A claim is never a verified fact." },
+        "willing_to_acquire": { "type": "boolean", "description": "true only if the user says they will learn or obtain it." },
+        "willingness_raw_text": { "anyOf": [{ "type": "null" }, { "type": "string" }], "description": "Exact span stating the willingness (\"I'll learn\"), when willing_to_acquire is true. Otherwise null." },
+        "raw_text": { "$ref": "#/$defs/raw_text" }
+      }
+    },
+    "interest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "raw_text"],
+      "properties": {
+        "value": { "type": "string", "description": "What the user wants to see or do. Interest is not capability." },
+        "raw_text": { "$ref": "#/$defs/raw_text" }
+      }
+    },
+    "constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "polarity", "strength", "condition", "raw_text"],
+      "properties": {
+        "value": { "type": "string", "description": "Employment-relevant life constraint in English, short (\"no car\"). Drop unrelated personal narrative." },
+        "polarity": { "$ref": "#/$defs/polarity" },
+        "strength": { "$ref": "#/$defs/strength" },
+        "condition": { "$ref": "#/$defs/condition" },
+        "raw_text": { "$ref": "#/$defs/raw_text" }
+      }
+    },
+    "uncertainty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "reason", "raw_text"],
+      "properties": {
+        "field": { "type": "string", "description": "Intent field the uncertainty is about, e.g. \"roles\"." },
+        "reason": { "type": "string", "enum": ["ambiguous", "vague", "unclear_strength", "unclear_reference"] },
+        "raw_text": { "$ref": "#/$defs/raw_text" }
+      }
+    },
+    "contradiction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fields", "description", "raw_text"],
+      "properties": {
+        "fields": { "type": "array", "items": { "type": "string" } },
+        "description": { "type": "string", "description": "Short English statement of the conflict. Keep both sides in the intent; do not resolve it." },
+        "raw_text": { "$ref": "#/$defs/raw_text" }
+      }
+    },
+    "clarification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "field", "question_key", "suggested_options"],
+      "properties": {
+        "reason": { "type": "string", "description": "snake_case, e.g. \"missing_reference_location\"." },
+        "field": { "type": "string", "description": "e.g. \"location_origin\"." },
+        "question_key": { "type": "string", "description": "snake_case key the client localizes, e.g. \"ask_location_origin\"." },
+        "suggested_options": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

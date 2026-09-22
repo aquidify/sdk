@@ -1,0 +1,182 @@
+openapi: 3.1.0
+info:
+  title: Aquidify API
+  version: 1.0.0
+  summary: Turn what people type into validated, structured intent.
+  description: |
+    Send free text and a domain; get back structured intent that your software
+    can act on. Every extracted item quotes the exact span of input it came from
+    (`raw_text`), uncertainty is kept rather than guessed away, and "unknown" is
+    never confused with "any".
+
+    Aquidify interprets. Your application decides: search, matching and
+    eligibility stay on your side.
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+  - url: https://api.aquidify.com
+security:
+  - bearer: []
+
+paths:
+  /v1/interpret:
+    post:
+      operationId: interpret
+      summary: Interpret free text into structured intent
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: >
+            Replays the first response for the same key and body for 24 hours.
+            Reusing a key with a different body returns 422 `idempotency_mismatch`.
+          schema: { type: string, maxLength: 128 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InterpretRequest" }
+            example:
+              domain: hiring.candidate
+              input: Iščem delo v skladišču v Ljubljani, brez nočnih.
+              locale: sl-SI
+      responses:
+        "200":
+          description: Interpretation
+          headers:
+            X-Request-ID: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InterpretResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+        "504": { $ref: "#/components/responses/Error" }
+
+  /healthz:
+    get:
+      operationId: health
+      summary: Liveness
+      security: []
+      responses:
+        "200": { description: ok, content: { text/plain: { schema: { type: string } } } }
+
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: "Your API key, sent as `Authorization: Bearer <key>`."
+
+  responses:
+    Error:
+      description: Error
+      headers:
+        Retry-After:
+          description: Seconds to wait (429 and 503).
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    InterpretRequest:
+      type: object
+      additionalProperties: false
+      required: [domain, input, locale]
+      properties:
+        domain:
+          type: string
+          description: Domain to interpret in. Available now `hiring.candidate`.
+          examples: [hiring.candidate]
+        input:
+          type: string
+          maxLength: 2000
+          description: What the person typed. Treated as data, never as instructions.
+        locale:
+          type: string
+          description: BCP 47 locale of the input, e.g. `sl-SI`, `en`.
+        parser_version:
+          type: string
+          description: Pin a parser release (e.g. `1.0.0`). Omit for the active one.
+        schema_version:
+          type: string
+          description: Pin an output schema version (e.g. `1.0.0`). Omit for the active one.
+
+    InterpretResponse:
+      type: object
+      required: [request_id, domain, parser_version, schema_version, interpretation, clarification, meta]
+      properties:
+        request_id: { type: string }
+        domain: { type: string }
+        parser_version: { type: string }
+        schema_version: { type: string }
+        interpretation:
+          type: object
+          description: >
+            Domain output. For `hiring.candidate` 1.0.0 it follows
+            `schemas/hiring.candidate-1.0.0.json` without its top-level
+            `clarification` (returned separately below).
+        clarification:
+          description: Present only when the input cannot be interpreted without asking.
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/Clarification"
+        meta: { $ref: "#/components/schemas/Meta" }
+
+    Clarification:
+      type: object
+      required: [reason, field, question_key, suggested_options]
+      properties:
+        reason: { type: string, examples: [missing_reference_location] }
+        field: { type: string, examples: [location_origin] }
+        question_key:
+          type: string
+          description: Stable key; your app localizes and renders the question.
+          examples: [ask_location_origin]
+        suggested_options: { type: array, items: { type: string } }
+
+    Meta:
+      type: object
+      required: [source, cache, latency_ms]
+      properties:
+        source:
+          type: string
+          enum: [deterministic, ai]
+          description: deterministic = resolved without a model call.
+        cache:
+          type: string
+          enum: [bypass, hit, miss, coalesced]
+          description: coalesced = shared the result of an identical in-flight request.
+        provider: { type: string }
+        model: { type: string }
+        latency_ms: { type: integer }
+
+    Error:
+      type: object
+      required: [error, request_id]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum:
+                - unauthorized
+                - rate_limited
+                - bad_json
+                - body_too_large
+                - invalid_request
+                - idempotency_mismatch
+                - model_unavailable
+                - interpretation_failed
+                - timeout
+                - internal
+            message: { type: string }
+        request_id: { type: string }

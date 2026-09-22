@@ -1,0 +1,19 @@
+{
+    "name": "aquidify/sdk",
+    "description": "PHP client for the Aquidify API: turn what people type into validated, structured intent.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["aquidify", "intent", "nlp", "structured output", "api", "sdk"],
+    "homepage": "https://aquidify.com",
+    "require": {
+        "php": ">=8.2",
+        "ext-curl": "*",
+        "ext-json": "*"
+    },
+    "autoload": {
+        "psr-4": { "Aquidify\\": "php/src/" }
+    },
+    "scripts": {
+        "test": "php php/tests/smoke.php"
+    }
+}

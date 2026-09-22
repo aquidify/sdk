@@ -1,0 +1,22 @@
+{
+  "name": "@aquidify/sdk",
+  "version": "0.1.0",
+  "description": "TypeScript/JavaScript client for the Aquidify API: turn what people type into validated, structured intent.",
+  "license": "MIT",
+  "homepage": "https://aquidify.com",
+  "repository": { "type": "git", "url": "git+https://github.com/aquidify/sdk.git", "directory": "js" },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "files": ["dist"],
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "build": "tsc",
+    "test": "tsc && node test.mjs",
+    "prepublishOnly": "tsc"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}
