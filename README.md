@@ -1,3 +1,5 @@
+<p align="center"><a href="https://aquidify.com"><img src=".github/logo.png" alt="Aquidify" width="280"></a></p>
+
 # Aquidify SDKs
 
 Official clients for the [Aquidify](https://aquidify.com) API: turn what people

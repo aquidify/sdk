@@ -5,3 +5,4 @@
 /rust       export-ignore
 /curl       export-ignore
 /php/tests  export-ignore
+/.github/    export-ignore
