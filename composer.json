@@ -26,6 +26,7 @@
     "scripts": {
         "test": [
             "phpunit php/tests/Laravel",
+            "phpunit php/tests/Search",
             "php php/tests/smoke.php"
         ]
     },

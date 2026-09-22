@@ -245,3 +245,5 @@ export interface HiringCandidateInterpretation {
   uncertainties: { field: string; reason: "ambiguous" | "vague" | "unclear_strength" | "unclear_reference"; raw_text: string }[];
   contradictions: { fields: string[]; description: string; raw_text: string }[];
 }
+
+export { SearchFilters, type FieldMap } from "./filters.js";

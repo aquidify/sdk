@@ -155,6 +155,46 @@ let r = aquidify::Client::from_env()?
 r.interpretation["intents"][0]["roles"][0]["value"]; // "warehouse"
 ```
 
+## Search engines: Meilisearch, Algolia, Elasticsearch
+
+Aquidify reads the query; your search engine finds and ranks the documents. `Filters` (PHP) and
+`SearchFilters` (TypeScript) turn an answer into that engine's filter. You map interpretation fields
+to your index attributes; unmapped fields are ignored.
+
+```php
+use Aquidify\Search\Filters;
+
+$r = $aq->interpret('hiring.candidate', 'Warehouse job in Maribor, mornings only, no weekends', 'en');
+$f = Filters::from($r, ['roles' => 'category', 'locations' => 'city', 'schedules' => 'shift', 'salary' => 'salary']);
+
+$meili->index('jobs')->search('', ['filter' => $f->meilisearch()]);
+// category = "warehouse" AND city = "Maribor" AND shift = "morning" AND shift NOT IN ["weekend"]
+
+$algolia->searchSingleIndex('jobs', ['filters' => $f->algolia(), 'optionalFilters' => $f->algoliaOptional()]);
+$es->search(['index' => 'jobs', 'body' => ['query' => $f->elasticsearch()]]);   // OpenSearch: same DSL
+```
+
+```ts
+import { SearchFilters } from "@aquidify/sdk";
+
+const f = SearchFilters.from(r, { roles: "category", locations: { attribute: "city", value: (v) => v.toLowerCase() } });
+await index.search("", { filter: f.meilisearch() });
+```
+
+| In the answer | Becomes |
+| --- | --- |
+| `include` + `required` | a filter; several values for one attribute are OR-ed |
+| `acceptable` / `conditional` | widens that filter, never filters on its own |
+| `preferred` | a boost only: Algolia `optionalFilters`, Elasticsearch `should` (Meilisearch: none) |
+| `exclude` + `required` | `NOT` |
+| `{min, max}` (salary, price) | a numeric range |
+| "any", or not said | nothing: no filter |
+
+One sentence can describe several searches (hiring `intents`). Meilisearch and Elasticsearch get them
+OR-ed; Algolia cannot OR groups, so run `searches()` as a multi-query. For Elasticsearch, map text
+fields to their keyword sub-field (`city.keyword`). Translate values into your index's vocabulary with
+`['attribute' => 'city', 'value' => fn ($v) => ...]`.
+
 ## Errors
 
 Every client raises one error type carrying the HTTP `status`, the API's
