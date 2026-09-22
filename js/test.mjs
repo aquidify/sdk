@@ -28,4 +28,10 @@ check(!e401.retryable, "401 not retryable");
 const e422 = await expectError(new Aquidify({ baseUrl }), { domain: "no.such.domain", input: "x", locale: "sl" }, 422, "invalid_request");
 check(!!e422.requestId, "request id on errors");
 
+check(Array.isArray(await new Aquidify({ baseUrl }).listTasks()), "listTasks returns ids");
+await new Aquidify({ baseUrl }).getTask("no.such.task@1.0.0").then(
+  () => check(false, "missing task must throw"),
+  (e) => check(e instanceof AquidifyError && e.status === 404 && e.code === "not_found", `404 not_found, got ${e.status} ${e.code}`),
+);
+
 console.log("js: ok");

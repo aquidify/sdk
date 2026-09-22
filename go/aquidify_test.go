@@ -63,3 +63,15 @@ func TestErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestTasks(t *testing.T) {
+	c := client(t, "")
+	if _, err := c.ListTasks(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	_, err := c.GetTask(context.Background(), "no.such.task@1.0.0")
+	var e *Error
+	if !errors.As(err, &e) || e.Status != 404 || e.Code != "not_found" {
+		t.Fatalf("missing task: got %v", err)
+	}
+}

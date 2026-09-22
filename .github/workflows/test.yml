@@ -1,0 +1,79 @@
+name: test
+
+# Builds and unit-tests every SDK on push and PR. The live smoke tests make no
+# model calls; they run when the repository secret AQUIDIFY_API_KEY is set and
+# skip themselves otherwise.
+on:
+  push:
+    branches: [main]
+    tags: ["v*", "go/v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  AQUIDIFY_API_KEY: ${{ secrets.AQUIDIFY_API_KEY }}
+
+jobs:
+  php:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2
+        with: { php-version: "8.4", extensions: curl, coverage: none }
+      - run: composer install --no-interaction --no-progress
+      - run: composer test
+
+  js:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: js } }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: 22 }
+      - run: npm ci
+      - run: npm test
+
+  go:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: go } }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with: { go-version-file: go/go.mod }
+      - run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test ./...
+
+  python:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: python } }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - run: uv build
+      - run: uv run python tests/smoke.py
+
+  java:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: java } }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with: { distribution: temurin, java-version: 17, cache: maven }
+      - run: mvn -q -B test
+
+  rust:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: rust } }
+    steps:
+      - uses: actions/checkout@v7
+      - run: cargo test --locked
+
+  openapi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+      - run: uvx openapi-spec-validator openapi.yaml

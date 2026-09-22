@@ -5,9 +5,17 @@
  *   import { Aquidify } from "@aquidify/sdk";
  *   const aq = new Aquidify({ apiKey: process.env.AQUIDIFY_API_KEY });
  *   const r = await aq.interpret({ domain: "hiring.candidate", input: "Iščem delo v skladišču v Ljubljani, brez nočnih.", locale: "sl-SI" });
+ *
+ *   // your own task, any industry
+ *   await aq.putTask("support.ticket@1.0.0", {
+ *     instructions: "Classify customer support emails.",
+ *     schema: { type: "object", properties: { category: { enum: ["billing", "bug", "refund"] }, order_id: { type: "string" } } },
+ *   });
+ *   const t = await aq.interpret<TaskInterpretation>({ domain: "support.ticket@1.0.0", input: emailBody, locale: "en" });
+ *   t.interpretation.fields.category;
  */
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.2.0";
 
 export interface InterpretRequest {
   domain: string;
@@ -46,6 +54,7 @@ export interface InterpretResponse<I = Record<string, unknown>> {
 export type ErrorCode =
   | "unauthorized" | "rate_limited" | "bad_json" | "body_too_large" | "invalid_request"
   | "idempotency_mismatch" | "model_unavailable" | "interpretation_failed" | "timeout"
+  | "invalid_task" | "task_exists" | "task_limit" | "not_found"
   | "internal" | "network" | "unknown";
 
 export class AquidifyError extends Error {
@@ -93,19 +102,43 @@ export class Aquidify {
     req: InterpretRequest,
     opts: { idempotencyKey?: string } = {},
   ): Promise<InterpretResponse<I>> {
+    const headers: Record<string, string> = {};
+    if (opts.idempotencyKey) headers["Idempotency-Key"] = opts.idempotencyKey;
+    return this.request("POST", "/v1/interpret", req, headers);
+  }
+
+  /**
+   * Register a task version (your own fields, any industry). The same definition
+   * again is a no-op; a changed one throws task_exists: register a new version.
+   */
+  putTask(id: string, def: TaskDefinition): Promise<Task> {
+    return this.request("PUT", `/v1/tasks/${encodeURIComponent(id)}`, def);
+  }
+
+  /** A registered task, with the output_schema its interpretations follow. Throws not_found. */
+  getTask(id: string): Promise<Task> {
+    return this.request("GET", `/v1/tasks/${encodeURIComponent(id)}`);
+  }
+
+  /** Task ids registered with this API key. */
+  async listTasks(): Promise<string[]> {
+    return (await this.request<{ tasks: string[] }>("GET", "/v1/tasks")).tasks;
+  }
+
+  private async request<T>(method: string, path: string, body?: unknown, extra: Record<string, string> = {}): Promise<T> {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.apiKey}`,
-      "Content-Type": "application/json",
       Accept: "application/json",
+      ...extra,
     };
-    if (opts.idempotencyKey) headers["Idempotency-Key"] = opts.idempotencyKey;
+    if (body !== undefined) headers["Content-Type"] = "application/json";
 
     let res: Response;
     try {
-      res = await this.fetch(`${this.baseUrl}/v1/interpret`, {
-        method: "POST",
+      res = await this.fetch(`${this.baseUrl}${path}`, {
+        method,
         headers,
-        body: JSON.stringify(req),
+        body: body === undefined ? undefined : JSON.stringify(body),
         signal: AbortSignal.timeout(this.timeoutMs),
       });
     } catch (e) {
@@ -113,7 +146,7 @@ export class Aquidify {
     }
 
     const data = (await res.json().catch(() => null)) as
-      | (InterpretResponse<I> & { error?: { code: ErrorCode; message: string } })
+      | (T & { request_id?: string; error?: { code: ErrorCode; message: string } })
       | null;
     if (res.ok && data) return data;
 
@@ -126,6 +159,38 @@ export class Aquidify {
       retryAfter,
     );
   }
+}
+
+// ---- client tasks ----
+
+export interface TaskDefinition {
+  /** What to extract and how, in plain words (max 4000 characters). */
+  instructions: string;
+  /**
+   * JSON Schema of the fields: top level {type: "object", properties}. Keywords: type,
+   * description, enum, properties, required, items, anyOf. A property not in
+   * `required` may come back null.
+   */
+  schema: Record<string, unknown>;
+  description?: string;
+  /** Up to 5; each output must match the schema. */
+  examples?: { input: string; output: Record<string, unknown> }[];
+}
+
+export interface Task extends TaskDefinition {
+  id: string;
+  created_at: string;
+  parser_version: string;
+  output_schema: Record<string, unknown>;
+}
+
+/** What interpret returns for a task. F is your fields type. */
+export interface TaskInterpretation<F = Record<string, unknown>> {
+  fields: F;
+  /** At least one per field with a value, quoting the input. */
+  evidence: { field: string; raw_text: string }[];
+  uncertainties: { field: string; reason: "ambiguous" | "vague" | "unclear_reference" | "no_matching_value"; raw_text: string }[];
+  contradictions: { fields: string[]; description: string; raw_text: string }[];
 }
 
 // ---- hiring.candidate 1.0.0 output (schemas/hiring.candidate-1.0.0.json) ----

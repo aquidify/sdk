@@ -4,6 +4,13 @@
     aq = Aquidify()  # reads AQUIDIFY_API_KEY
     r = aq.interpret("hiring.candidate", "Iščem delo v skladišču v Ljubljani, brez nočnih.", "sl-SI")
     r["interpretation"]["intents"][0]["roles"][0]["value"]  # "warehouse"
+
+    # your own task, any industry
+    aq.put_task("support.ticket@1.0.0", {
+        "instructions": "Classify customer support emails.",
+        "schema": {"type": "object", "properties": {"category": {"enum": ["billing", "bug"]}}},
+    })
+    aq.interpret("support.ticket@1.0.0", email_body, "en")["interpretation"]["fields"]
 """
 
 from __future__ import annotations
@@ -11,11 +18,12 @@ from __future__ import annotations
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any, Optional
 
 __all__ = ["Aquidify", "AquidifyError", "__version__"]
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 _RETRYABLE = {"rate_limited", "model_unavailable", "timeout", "network"}
 
@@ -54,17 +62,35 @@ class Aquidify:
             body["parser_version"] = parser_version
         if schema_version:
             body["schema_version"] = schema_version
+        headers = {"Idempotency-Key": idempotency_key} if idempotency_key else {}
+        return self._request("POST", "/v1/interpret", body, headers)
+
+    def put_task(self, id: str, definition: dict[str, Any]) -> dict[str, Any]:
+        """Register a task version: {"instructions", "schema", "description"?, "examples"?}.
+        The same definition again is a no-op; a changed one raises task_exists."""
+        return self._request("PUT", f"/v1/tasks/{urllib.parse.quote(id, safe='')}", definition)
+
+    def get_task(self, id: str) -> dict[str, Any]:
+        """A registered task with its output_schema. Raises not_found."""
+        return self._request("GET", f"/v1/tasks/{urllib.parse.quote(id, safe='')}")
+
+    def list_tasks(self) -> list[str]:
+        """Task ids registered with this API key."""
+        return self._request("GET", "/v1/tasks")["tasks"]
+
+    def _request(self, method: str, path: str, body: Optional[dict[str, Any]] = None,
+                 extra: Optional[dict[str, str]] = None) -> dict[str, Any]:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
             "Accept": "application/json",
             "User-Agent": f"aquidify-sdk-python/{__version__}",
+            **(extra or {}),
         }
-        if idempotency_key:
-            headers["Idempotency-Key"] = idempotency_key
-
-        req = urllib.request.Request(f"{self.base_url}/v1/interpret",
-                                     data=json.dumps(body).encode(), headers=headers, method="POST")
+        data = None
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+            data = json.dumps(body).encode()
+        req = urllib.request.Request(f"{self.base_url}{path}", data=data, headers=headers, method=method)
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as res:
                 return json.load(res)

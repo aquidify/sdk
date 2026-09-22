@@ -10,6 +10,14 @@
 //
 // Interpretation is returned as raw JSON; unmarshal it into your own types or
 // see schemas/hiring.candidate-1.0.0.json in the repository.
+//
+// Your own task, any industry: register it once, then interpret with its id.
+//
+//	c.PutTask(ctx, "support.ticket@1.0.0", aquidify.TaskDefinition{
+//		Instructions: "Classify customer support emails.",
+//		Schema:       json.RawMessage(`{"type":"object","properties":{"category":{"enum":["billing","bug"]}}}`),
+//	})
+//	r, err := c.Interpret(ctx, aquidify.Request{Domain: "support.ticket@1.0.0", Input: body, Locale: "en"})
 package aquidify
 
 import (
@@ -20,13 +28,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 )
 
-const Version = "0.1.0"
+const Version = "0.2.0"
 
 type Request struct {
 	Domain        string `json:"domain"`
@@ -110,16 +119,84 @@ func WithIdempotencyKey(key string) Option {
 
 // Interpret turns free text into structured intent.
 func (c *Client) Interpret(ctx context.Context, req Request, opts ...Option) (*Response, error) {
-	body, err := json.Marshal(req)
-	if err != nil {
+	var out Response
+	if err := c.do(ctx, http.MethodPost, "/v1/interpret", req, &out, opts...); err != nil {
 		return nil, err
 	}
-	hr, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.BaseURL, "/")+"/v1/interpret", bytes.NewReader(body))
-	if err != nil {
+	return &out, nil
+}
+
+// TaskDefinition is what you register: instructions, a JSON Schema of the
+// fields (top level object; keywords type, description, enum, properties,
+// required, items, anyOf) and up to 5 examples.
+type TaskDefinition struct {
+	Instructions string          `json:"instructions"`
+	Schema       json.RawMessage `json:"schema"`
+	Description  string          `json:"description,omitempty"`
+	Examples     []TaskExample   `json:"examples,omitempty"`
+}
+
+type TaskExample struct {
+	Input  string          `json:"input"`
+	Output json.RawMessage `json:"output"`
+}
+
+// Task is a registered task version.
+type Task struct {
+	TaskDefinition
+	ID            string          `json:"id"`
+	CreatedAt     time.Time       `json:"created_at"`
+	ParserVersion string          `json:"parser_version"`
+	OutputSchema  json.RawMessage `json:"output_schema"`
+}
+
+// PutTask registers a task version. The same definition again is a no-op; a
+// changed one fails with code task_exists: register a new version.
+func (c *Client) PutTask(ctx context.Context, id string, def TaskDefinition) (*Task, error) {
+	var t Task
+	if err := c.do(ctx, http.MethodPut, "/v1/tasks/"+url.PathEscape(id), def, &t); err != nil {
 		return nil, err
+	}
+	return &t, nil
+}
+
+// GetTask returns a registered task; code not_found when this key has none by that id.
+func (c *Client) GetTask(ctx context.Context, id string) (*Task, error) {
+	var t Task
+	if err := c.do(ctx, http.MethodGet, "/v1/tasks/"+url.PathEscape(id), nil, &t); err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+// ListTasks returns the task ids registered with this API key.
+func (c *Client) ListTasks(ctx context.Context) ([]string, error) {
+	var out struct {
+		Tasks []string `json:"tasks"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/v1/tasks", nil, &out); err != nil {
+		return nil, err
+	}
+	return out.Tasks, nil
+}
+
+func (c *Client) do(ctx context.Context, method, path string, in, out any, opts ...Option) error {
+	var body io.Reader
+	if in != nil {
+		b, err := json.Marshal(in)
+		if err != nil {
+			return err
+		}
+		body = bytes.NewReader(b)
+	}
+	hr, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.BaseURL, "/")+path, body)
+	if err != nil {
+		return err
 	}
 	hr.Header.Set("Authorization", "Bearer "+c.apiKey)
-	hr.Header.Set("Content-Type", "application/json")
+	if in != nil {
+		hr.Header.Set("Content-Type", "application/json")
+	}
 	hr.Header.Set("Accept", "application/json")
 	hr.Header.Set("User-Agent", "aquidify-sdk-go/"+Version)
 	for _, o := range opts {
@@ -128,20 +205,19 @@ func (c *Client) Interpret(ctx context.Context, req Request, opts ...Option) (*R
 
 	res, err := c.HTTP.Do(hr)
 	if err != nil {
-		return nil, &Error{Code: "network", Message: err.Error()}
+		return &Error{Code: "network", Message: err.Error()}
 	}
 	defer res.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(res.Body, 4<<20))
 	if err != nil {
-		return nil, &Error{Status: res.StatusCode, Code: "network", Message: err.Error()}
+		return &Error{Status: res.StatusCode, Code: "network", Message: err.Error()}
 	}
 
 	if res.StatusCode >= 200 && res.StatusCode < 300 {
-		var out Response
-		if err := json.Unmarshal(raw, &out); err != nil {
-			return nil, fmt.Errorf("aquidify: decode response: %w", err)
+		if err := json.Unmarshal(raw, out); err != nil {
+			return fmt.Errorf("aquidify: decode response: %w", err)
 		}
-		return &out, nil
+		return nil
 	}
 
 	var e struct {
@@ -162,5 +238,5 @@ func (c *Client) Interpret(ctx context.Context, req Request, opts ...Option) (*R
 	if s, err := strconv.Atoi(res.Header.Get("Retry-After")); err == nil {
 		apiErr.RetryAfter = time.Duration(s) * time.Second
 	}
-	return nil, apiErr
+	return apiErr
 }

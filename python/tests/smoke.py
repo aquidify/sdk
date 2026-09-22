@@ -31,4 +31,11 @@ for key, domain, status, code in [("wrong-key", "hiring.candidate", 401, "unauth
     except AquidifyError as e:
         check(e.status == status and e.code == code and e.request_id and not e.retryable, f"{status} {code}")
 
+check(isinstance(Aquidify(base_url=base).list_tasks(), list), "list_tasks returns ids")
+try:
+    Aquidify(base_url=base).get_task("no.such.task@1.0.0")
+    check(False, "missing task must raise")
+except AquidifyError as e:
+    check(e.status == 404 and e.code == "not_found", f"404 not_found, got {e.status} {e.code}")
+
 print("python: ok")
