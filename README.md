@@ -14,7 +14,7 @@ with "any". **Aquidify interprets; your application decides.**
 
 | Language | Folder | Install today (from GitHub) | Registry |
 |---|---|---|---|
-| PHP 8.2+ | [`php/`](php) | see [PHP](#php) below | Packagist `aquidify/sdk`, coming soon |
+| PHP 8.2+ / Laravel | [`php/`](php) | see [PHP](#php) below | Packagist `aquidify/sdk`, coming soon |
 | TypeScript / JavaScript | [`js/`](js) | build from source: `cd js && npm install && npm run build` | npm `@aquidify/sdk`, coming soon |
 | Go | [`go/`](go) | `go get github.com/aquidify/sdk/go@v0.1.0` | ✓ published |
 | Python 3.9+ | [`python/`](python) | `pip install "git+https://github.com/aquidify/sdk@v0.1.0#subdirectory=python"` | PyPI `aquidify`, coming soon |
@@ -45,6 +45,51 @@ $r  = $aq->interpret('hiring.candidate', 'Iščem delo v skladišču v Ljubljani
 $r['interpretation']['intents'][0]['roles'][0]['value'];   // "warehouse"
 $r['clarification'];                                       // null
 ```
+
+## Laravel
+
+The PHP package includes a Laravel adapter (auto-discovered): config, a
+service provider, the `Aquidify` facade and a fake for tests.
+
+```bash
+# .env
+AQUIDIFY_API_KEY=...
+AQUIDIFY_TIMEOUT=8            # seconds; keep short in web requests and fall back
+AQUIDIFY_PARSER_VERSION=1.0.0 # pinned by default
+AQUIDIFY_SCHEMA_VERSION=1.0.0
+
+php artisan vendor:publish --tag=aquidify-config   # optional
+```
+
+```php
+use Aquidify\Interpreter;
+use Aquidify\Laravel\Facades\Aquidify;
+
+// inject…
+public function __construct(private Interpreter $aquidify) {}
+$r = $this->aquidify->interpret('hiring.candidate', $text, app()->getLocale());
+
+// …or use the facade
+$r = Aquidify::interpret('hiring.candidate', $text, 'sl');
+```
+
+Tests never touch the network:
+
+```php
+use Aquidify\Testing\FakeClient;
+
+Aquidify::fake([
+    'skladišče' => FakeClient::interpretation(['intents' => [/* … */]]),  // input substring => response
+    '*'         => FakeClient::error('model_unavailable'),                // everything else fails
+]);
+
+// … exercise your code …
+
+Aquidify::assertInterpreted(fn ($call) => $call['locale'] === 'sl');
+```
+
+`Aquidify::fake()` replaces both the facade and every injected `Interpreter`.
+Without Laravel, use `new FakeClient([...])` directly.
 
 ## TypeScript / JavaScript
 
@@ -112,7 +157,7 @@ Each SDK has a live smoke test that makes no model calls (it costs nothing):
 
 ```bash
 export AQUIDIFY_API_KEY=...
-composer install && composer test                  # PHP
+composer install && composer test                  # PHP + Laravel adapter
 cd js && npm install && npm test                   # TypeScript
 cd go && go test ./...                             # Go
 cd python && uv run python tests/smoke.py          # Python

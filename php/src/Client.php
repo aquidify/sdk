@@ -11,9 +11,9 @@ namespace Aquidify;
  *     $r  = $aq->interpret('hiring.candidate', 'Iščem delo v skladišču v Ljubljani, brez nočnih.', 'sl-SI');
  *     $r['interpretation']['intents'][0]['roles'][0]['value']; // "warehouse"
  */
-final class Client
+final class Client implements Interpreter
 {
-    public const VERSION = '0.1.0';
+    public const VERSION = '0.2.0';
 
     private readonly string $apiKey;
 
