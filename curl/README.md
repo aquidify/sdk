@@ -142,8 +142,9 @@ Every error has the same shape; branch on `error.code`, not on the message.
 | 404 | `not_found` | no (no such task for this key) |
 | 409 | `task_exists` | no, register a new version |
 | 422 | `invalid_request`, `idempotency_mismatch`, `invalid_task`, `task_limit` | no |
+| 422 | `interpretation_failed` | maybe, rephrased: the model gave no valid answer for this input |
+| 422 | `provider_key_rejected` | no, your own AI key was refused; update or remove it |
 | 429 | `rate_limited` | yes, after `Retry-After` seconds |
 | 500 | `internal` | maybe, once; report it with the `request_id` if it repeats |
-| 502 | `interpretation_failed` | maybe, the model gave no valid answer |
 | 503 | `model_unavailable` | yes, after `Retry-After` seconds |
-| 504 | `timeout` | yes |
+| 503 | `timeout` | yes, after `Retry-After` seconds |
