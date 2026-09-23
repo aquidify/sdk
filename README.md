@@ -196,6 +196,39 @@ OR-ed; Algolia cannot OR groups, so run `searches()` as a multi-query. For Elast
 fields to their keyword sub-field (`city.keyword`). Translate values into your index's vocabulary with
 `['attribute' => 'city', 'value' => fn ($v) => ...]`.
 
+## Shops: WooCommerce and Shopify (PHP)
+
+The same `Filters` turns a shop task's answer into the store's own product search. A
+shop's attributes arrive as `"colour: red"`, `"size: 42"`; `by_name` sends each name to
+its own filter, and names you did not map are ignored, not guessed.
+
+```php
+// WooCommerce: wc_get_products() arguments
+$f = Filters::from($response, [
+    'products' => 's',
+    'attributes' => ['by_name' => ['colour' => 'pa_color', 'size' => 'pa_size']],
+    'brands' => 'product_brand',          // core since WooCommerce 9.6
+    'price' => '_price',
+]);
+wc_get_products($f->woocommerce());
+
+// Shopify: Storefront API search(query:, productFilters:, types: [PRODUCT])
+$f = Filters::from($response, [
+    'products' => 'query',
+    'attributes' => ['by_name' => ['colour' => 'option:Color', 'size' => 'option:Size']],
+    'brands' => 'vendor',
+    'price' => 'price',
+]);
+$variables = $f->shopify();
+$f->shopifyLeftOut();                     // e.g. ["vendor != nike"]
+```
+
+"Red running shoes, size 42, up to €80, just not Nike." becomes a search for running
+shoes in red, size 42, at most 80, with Nike excluded (WooCommerce `NOT IN`). Shopify's
+product filters cannot exclude, so the exclusion is reported by `shopifyLeftOut()`
+instead of being dropped silently. Prices are compared as numbers in the store's
+currency; convert or drop a price in another currency first.
+
 ## Errors
 
 Every client raises one error type carrying the HTTP `status`, the API's

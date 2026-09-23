@@ -15,7 +15,13 @@ use LogicException;
  *     $index->search('', ['filter' => $f->meilisearch()]);
  *
  * $map is interpretation field => index attribute, or ['attribute' => ..., 'value' => fn (string $v): string]
- * to translate values into your index's vocabulary. Unmapped fields are ignored.
+ * to translate values into your index's vocabulary. Unmapped fields are ignored. A field whose values
+ * are "name: value" pairs (a shop task's attributes: "colour: red", "size: 42") can route each name
+ * to its own attribute with ['by_name' => ['colour' => 'pa_color', 'size' => 'pa_size']]; names
+ * not listed are ignored rather than guessed.
+ *
+ * Shops: woocommerce() gives wc_get_products() arguments, shopify() Storefront API search
+ * variables (see each method for the attribute names they understand).
  *
  * Per item (hiring intents and custom-task fields share the shape value/polarity/strength):
  *   include + required                -> filter; several values for one attribute are OR-ed
@@ -44,7 +50,8 @@ final class Filters
         foreach ($units as $unit) {
             $g = ['must' => [], 'widen' => [], 'not' => [], 'prefer' => [], 'range' => []];
             foreach ($map as $field => $to) {
-                $attr = is_array($to) ? $to['attribute'] : $to;
+                $byName = is_array($to) ? ($to['by_name'] ?? null) : null;
+                $attr = is_array($to) ? ($to['attribute'] ?? '') : $to;
                 $tr = is_array($to) && isset($to['value']) ? $to['value'] : static fn (string $v): string => $v;
                 $v = $unit[$field] ?? null;
                 if ($v === null || $v === [] || $v === false) {
@@ -67,7 +74,18 @@ final class Filters
                     if ($value === null || $value === '') {
                         continue; // e.g. "near me": no place to filter on
                     }
-                    $value = $tr((string) $value);
+                    $value = (string) $value;
+                    $itemAttr = $attr;
+                    if ($byName !== null) {
+                        // "colour: red" -> the attribute mapped for "colour", value "red"
+                        [$name, $rest] = array_pad(array_map('trim', explode(':', $value, 2)), 2, null);
+                        $itemAttr = $byName[strtolower((string) $name)] ?? null;
+                        if ($itemAttr === null || $rest === null || $rest === '') {
+                            continue; // a name the shop did not map: ignored, not guessed
+                        }
+                        $value = $rest;
+                    }
+                    $value = $tr($value);
                     $polarity = is_array($item) ? ($item['polarity'] ?? 'include') : 'include';
                     $strength = is_array($item) ? ($item['strength'] ?? 'required') : 'required';
                     $bucket = match (true) {
@@ -78,7 +96,7 @@ final class Filters
                         default => 'widen',
                     };
                     if ($bucket !== null) {
-                        $g[$bucket][$attr][] = $value;
+                        $g[$bucket][$itemAttr][] = $value;
                     }
                 }
             }
@@ -194,6 +212,106 @@ final class Filters
         };
     }
 
+    /**
+     * WooCommerce: arguments for wc_get_products() (or a product WP_Query) for one search.
+     *
+     * Attribute names: 's' is the search text; '_price' (or any attribute that gets a range)
+     * is a numeric meta range; everything else is a product taxonomy, filtered by term slug:
+     * 'pa_color', 'pa_size', 'product_cat', 'product_brand' (core since WooCommerce 9.6).
+     * Excluded values become NOT IN, so "just not Nike" is honoured. Prices are compared as
+     * numbers in the shop's currency: convert or drop a price in another currency first.
+     *
+     *     $f = Filters::from($response, [
+     *         'products' => 's',
+     *         'attributes' => ['by_name' => ['colour' => 'pa_color', 'size' => 'pa_size']],
+     *         'brands' => 'product_brand',
+     *         'price' => '_price',
+     *     ]);
+     *     wc_get_products($f->woocommerce());
+     *
+     * @return array<string, mixed>
+     */
+    public function woocommerce(): array
+    {
+        $g = $this->single('woocommerce');
+        $slug = static fn (string $v): string => trim((string) preg_replace('/[^a-z0-9]+/', '-', strtolower($v)), '-');
+        $args = [];
+        $tax = [];
+        foreach ($g['must'] as $attr => $vs) {
+            if ($attr === 's') {
+                $args['s'] = implode(' ', $vs);
+
+                continue;
+            }
+            $tax[] = ['taxonomy' => $attr, 'field' => 'slug', 'terms' => array_map($slug, $vs), 'operator' => 'IN'];
+        }
+        foreach ($g['not'] as $attr => $vs) {
+            if ($attr !== 's') {
+                $tax[] = ['taxonomy' => $attr, 'field' => 'slug', 'terms' => array_map($slug, $vs), 'operator' => 'NOT IN'];
+            }
+        }
+        if ($tax) {
+            $args['tax_query'] = ['relation' => 'AND', ...$tax];
+        }
+        $meta = [];
+        foreach ($g['range'] as $attr => [$min, $max]) {
+            $min !== null && $meta[] = ['key' => $attr, 'value' => $min, 'compare' => '>=', 'type' => 'NUMERIC'];
+            $max !== null && $meta[] = ['key' => $attr, 'value' => $max, 'compare' => '<=', 'type' => 'NUMERIC'];
+        }
+        if ($meta) {
+            $args['meta_query'] = ['relation' => 'AND', ...$meta];
+        }
+
+        return $args;
+    }
+
+    /**
+     * Shopify: variables for the Storefront API `search` query for one search:
+     * `search(query: $query, productFilters: $productFilters, types: [PRODUCT])`.
+     *
+     * Attribute names: 'query' is the search text; 'option:Color' (any 'option:<Name>') is a
+     * variant option; 'vendor', 'productType' and 'tag' are the product fields of the same
+     * name; 'price' takes a range. Shopify's product filters can only include, never exclude,
+     * so excluded values are left out: shopifyLeftOut() lists them instead of guessing.
+     *
+     * @return array{query: string, productFilters: list<array<string, mixed>>}
+     */
+    public function shopify(): array
+    {
+        $g = $this->single('shopify');
+        $filters = [];
+        foreach ($g['must'] as $attr => $vs) {
+            if ($attr === 'query') {
+                continue;
+            }
+            foreach ($vs as $v) {
+                $filters[] = match (true) {
+                    str_starts_with($attr, 'option:') => ['variantOption' => ['name' => substr($attr, 7), 'value' => $v]],
+                    $attr === 'vendor' => ['productVendor' => $v],
+                    default => [$attr => $v],
+                };
+            }
+        }
+        foreach ($g['range'] as [$min, $max]) {
+            $filters[] = ['price' => array_filter(['min' => $min, 'max' => $max], static fn ($x) => $x !== null)];
+        }
+
+        return ['query' => implode(' ', $g['must']['query'] ?? []), 'productFilters' => $filters];
+    }
+
+    /** What shopify() had to leave out (exclusions), as "attribute != value". @return list<string> */
+    public function shopifyLeftOut(): array
+    {
+        $out = [];
+        foreach ($this->single('shopify')['not'] as $attr => $vs) {
+            foreach ($vs as $v) {
+                $out[] = "{$attr} != {$v}";
+            }
+        }
+
+        return $out;
+    }
+
     /** @param list<string> $groups */
     private static function orGroups(array $groups): string
     {
@@ -206,7 +324,7 @@ final class Filters
     private function single(string $method): array
     {
         if (count($this->groups) > 1) {
-            throw new LogicException("The text describes several searches; Algolia cannot OR them in one filter. Call {$method}() on each of searches() (a multi-query).");
+            throw new LogicException("The text describes several searches and {$method}() takes one. Call {$method}() on each of searches() (a multi-query).");
         }
 
         return $this->groups[0] ?? ['must' => [], 'widen' => [], 'not' => [], 'prefer' => [], 'range' => []];
