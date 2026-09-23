@@ -6,7 +6,7 @@
 
   <groupId>com.aquidify</groupId>
   <artifactId>aquidify-sdk</artifactId>
-  <version>0.1.0</version>
+  <version>0.2.0</version>
   <name>Aquidify SDK</name>
   <description>Java client for the Aquidify API: turn what people type into validated, structured intent.</description>
   <url>https://aquidify.com</url>

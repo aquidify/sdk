@@ -8,13 +8,20 @@
 //!     "sl-SI",
 //! ))?;
 //! assert_eq!(r.interpretation["intents"][0]["roles"][0]["value"], "warehouse");
+//!
+//! // your own task, any industry: register it once, then interpret with its id
+//! aq.put_task("support.ticket@1.0.0", &serde_json::json!({
+//!     "instructions": "Classify customer support emails.",
+//!     "schema": {"type": "object", "properties": {"category": {"enum": ["billing", "bug"]}}}
+//! }))?;
+//! aq.interpret(&aquidify::Request::new("support.ticket@1.0.0", "I was charged twice", "en"))?;
 //! # Ok::<(), aquidify::Error>(())
 //! ```
 
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-pub const VERSION: &str = "0.1.0";
+pub const VERSION: &str = "0.2.0";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Request {
@@ -148,18 +155,74 @@ impl Client {
         req: &Request,
         idempotency_key: Option<&str>,
     ) -> Result<Response, Error> {
-        let url = format!("{}/v1/interpret", self.base_url.trim_end_matches('/'));
+        let body = serde_json::to_value(req).map_err(|e| Error::local("encode", e.to_string()))?;
+        let data = self.call("POST", "/v1/interpret", Some(&body), idempotency_key)?;
+        serde_json::from_value(data).map_err(|e| Error::local("decode", e.to_string()))
+    }
+
+    /// Registers a task version (`name@version`); `definition` is the task's JSON
+    /// (instructions, schema, optional description and examples). The same definition
+    /// again is a no-op; a changed one fails with code `task_exists`: register a new
+    /// version instead. Returns the registered task.
+    pub fn put_task(
+        &self,
+        id: &str,
+        definition: &serde_json::Value,
+    ) -> Result<serde_json::Value, Error> {
+        self.call(
+            "PUT",
+            &format!("/v1/tasks/{}", path_segment(id)),
+            Some(definition),
+            None,
+        )
+    }
+
+    /// A registered task; code `not_found` when this key has none by that id.
+    pub fn get_task(&self, id: &str) -> Result<serde_json::Value, Error> {
+        self.call(
+            "GET",
+            &format!("/v1/tasks/{}", path_segment(id)),
+            None,
+            None,
+        )
+    }
+
+    /// The task ids registered with this API key.
+    pub fn list_tasks(&self) -> Result<Vec<String>, Error> {
+        let data = self.call("GET", "/v1/tasks", None, None)?;
+        Ok(data["tasks"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|t| t.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
+
+    fn call(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<&serde_json::Value>,
+        idempotency_key: Option<&str>,
+    ) -> Result<serde_json::Value, Error> {
+        let url = format!("{}{}", self.base_url.trim_end_matches('/'), path);
         let mut call = self
             .agent
-            .post(&url)
+            .request(method, &url)
             .set("Authorization", &format!("Bearer {}", self.api_key))
             .set("Accept", "application/json")
             .set("User-Agent", &format!("aquidify-sdk-rust/{VERSION}"));
         if let Some(key) = idempotency_key {
             call = call.set("Idempotency-Key", key);
         }
+        let sent = match body {
+            Some(b) => call.send_json(b),
+            None => call.call(),
+        };
 
-        match call.send_json(req) {
+        match sent {
             Ok(res) => res
                 .into_json()
                 .map_err(|e| Error::local("network", e.to_string())),
@@ -184,4 +247,16 @@ impl Client {
             Err(e) => Err(Error::local("network", e.to_string())),
         }
     }
+}
+
+/// Percent-encodes a task id for the path, keeping `@` and the unreserved characters.
+fn path_segment(id: &str) -> String {
+    id.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'@' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
 }

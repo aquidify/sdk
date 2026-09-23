@@ -62,9 +62,9 @@ $aq->putTask('support.ticket@1.0.0', [
 $fields = $aq->interpret('support.ticket@1.0.0', $emailBody, 'en')['interpretation']['fields'];
 ```
 
-Every SDK can interpret with a task id as the domain. Registering tasks
-(`putTask` / `getTask` / `listTasks`) is in the PHP, TypeScript, Go and Python
-SDKs (`put_task` … in Python); from Java and Rust use plain HTTP for now.
+Every SDK can interpret with a task id as the domain, and every SDK registers
+tasks: `putTask` / `getTask` / `listTasks` (PHP, TypeScript, Go, Java) and
+`put_task` / `get_task` / `list_tasks` (Python, Rust).
 
 ## Laravel
 
