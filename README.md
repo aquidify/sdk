@@ -14,9 +14,9 @@ Every extracted item quotes the exact span it came from (`raw_text`),
 uncertainty is kept instead of guessed away, and "unknown" is never confused
 with "any". **Aquidify interprets; your application decides.**
 
-| Language | Folder | Install today (from GitHub) | Registry |
+| Language | Folder | Install | Registry |
 |---|---|---|---|
-| PHP 8.2+ / Laravel | [`php/`](php) | see [PHP](#php) below | Packagist `aquidify/sdk`, coming soon |
+| PHP 8.2+ / Laravel | [`php/`](php) | `composer require aquidify/sdk` | ✓ published |
 | TypeScript / JavaScript | [`js/`](js) | build from source: `cd js && npm install && npm run build` | npm `@aquidify/sdk`, coming soon |
 | Go | [`go/`](go) | `go get github.com/aquidify/sdk/go@v0.1.0` | ✓ published |
 | Python 3.9+ | [`python/`](python) | `pip install "git+https://github.com/aquidify/sdk@v0.1.0#subdirectory=python"` | PyPI `aquidify`, coming soon |
@@ -33,12 +33,13 @@ All clients read `AQUIDIFY_API_KEY` from the environment when no key is passed.
 
 ## PHP
 
-Until the package is on Packagist, add the repository to your `composer.json`:
-
 ```bash
-composer config repositories.aquidify vcs https://github.com/aquidify/sdk
-composer require aquidify/sdk:^0.3
+composer require aquidify/sdk
 ```
+
+Laravel discovers the service provider and facade on its own; publish the
+config with `php artisan vendor:publish --tag=aquidify-config` when you want to
+change the base URL or timeout.
 
 ```php
 $aq = new Aquidify\Client();   // AQUIDIFY_API_KEY
